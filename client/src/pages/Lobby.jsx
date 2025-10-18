@@ -19,6 +19,10 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
     // Join game room
     if (gameState?.code && playerInfo?.id) {
       console.log('🚀 Joining game room:', gameState.code, 'Player:', playerInfo.id)
+      
+      // CONNECT SOCKET FIRST
+      socket.connect();
+      
       socket.emit('join-game', {
         gameCode: gameState.code,
         playerId: playerInfo.id
@@ -60,6 +64,18 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
       setTimeout(() => setNotification(''), 5000)
     }
 
+    // Listen for connection events
+    const handleConnect = () => {
+      console.log('✅ Socket connected!')
+    }
+
+    const handleDisconnect = () => {
+      console.log('❌ Socket disconnected!')
+    }
+
+    // Set up all event listeners
+    socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
     socket.on('player-joined', handlePlayerJoined)
     socket.on('players-updated', handlePlayersUpdated)
     socket.on('game-started', handleGameStarted)
@@ -68,6 +84,9 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
     socket.on('return-to-lobby', handleReturnToLobby)
 
     return () => {
+      // Clean up all event listeners
+      socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
       socket.off('player-joined', handlePlayerJoined)
       socket.off('players-updated', handlePlayersUpdated)
       socket.off('game-started', handleGameStarted)
