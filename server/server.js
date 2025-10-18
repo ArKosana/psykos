@@ -1,4 +1,5 @@
 import express from 'express';
+import AIService from './ai/ai-service.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
