@@ -14,15 +14,15 @@ class AIService {
 
             const categoryPrompts = {
                 'caption-this': `Generate a funny, interesting image description that people can write captions for. Make it visual and humorous.`,
-                'acronyms': `Generate a common acronym (like NASA, FBI, LOL) that people might not know the real meaning of. Provide the acronym and its real meaning.`,
-                'is-that-a-fact': `Generate a surprising but true fact about an interesting topic (science, history, animals, etc.). Make it believable but surprising.`,
-                'truth-comes-out': `Generate a personal question about specific players. Use player names like "What is ${playerNames[0]}'s guilty pleasure?" instead of "your guilty pleasure". Make it fun and revealing. Available players: ${playerNames.join(', ')}.`,
+                'acronyms': `Generate an acronym that people might not know the real meaning of. Provide the acronym and its real meaning, but not the one's most people are familiar with `,
+                'is-that-a-fact': `Generate a surprising but true fact about an interesting topic (science, history, animals, etc.). Make it believable but surprising, a maximum of 2 or 3 sentences.`,
+                'truth-comes-out': `Generate a personal question about specific players. Use player names like "What is ${playerNames[0]}'s guilty pleasure?" instead of "your guilty pleasure or when is ${playerNames[0]}'s birthday? etc". Make it fun and revealing. Available players: ${playerNames.join(', ')}.`,
                 'search-history': `Generate the beginning of a funny search query that people would complete (like "why do cats..." or "how to impress...").`,
-                'ice-breaker': `Generate a fun get-to-know-you question for a group of people.`,
+                'ice-breaker': `Generate a fun get-to-know-you question for a group of people and make it specific to players ${playerNames[0]}. Available players: ${playerNames.join(', ')}.`,
                 'naked-truth': `Generate an adult-themed (18+) personal question for specific players. Use player names like "What is ${playerNames[0]}'s wildest fantasy?" instead of "your wildest fantasy". Keep it fun but mature. Available players: ${playerNames.join(', ')}.`
             };
 
-            const systemPrompt = `You are a party game content generator. Generate engaging, fun content for a social deduction game similar to Psych!. Keep responses concise and entertaining. For personal questions, always use player names instead of "you" or "your".`;
+            const systemPrompt = `You are a party game content generator. Generate engaging, fun content for a social deduction game similar to Psych!. Keep responses concise and entertaining. For personal questions, always use player names instead of "you" or "your". and keep it as unique and fun as you can also keep it short and entertaining. Try not to repeat the questions.`;
             
             const userPrompt = `${categoryPrompts[category]}\n\n${prompt || 'Generate content for this category:'}`;
 
