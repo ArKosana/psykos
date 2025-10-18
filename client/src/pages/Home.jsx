@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 
+const API_URL = 'https://psykos-server-production.up.railway.app';
 const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [showCreateGame, setShowCreateGame] = useState(false)
@@ -70,7 +71,7 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
 
     try {
-      const response = await fetch('${import.meta.env.VITE_API_URL}/create-game', {
+      const response = await fetch('${API_URL}/create-game', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +117,7 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
 
     try {
-      const response = await fetch('${import.meta.env.VITE_API_URL}/join-game', {
+      const response = await fetch('${API_URL}/join-game', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
