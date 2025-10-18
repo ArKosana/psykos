@@ -70,7 +70,7 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
 
     try {
-      const response = await fetch('http://localhost:5174/create-game', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/create-game', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +116,7 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
 
     try {
-      const response = await fetch('http://localhost:5174/join-game', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/join-game', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
