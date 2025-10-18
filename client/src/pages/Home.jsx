@@ -71,7 +71,7 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
 
     try {
-      const response = await fetch('${API_URL}/create-game', {
+      const response = await fetch(`${API_URL}/create-game`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -117,7 +117,7 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
 
     try {
-      const response = await fetch('${API_URL}/join-game', {
+      const response = await fetch(`${API_URL}/join-game`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
