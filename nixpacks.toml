@@ -1,8 +1,0 @@
-[phases.setup]
-cmds = ["cd server && npm install"]
-
-[phases.build]
-cmds = ["echo 'No build step needed'"]
-
-[start]
-cmd = "cd server && npm start"

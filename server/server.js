@@ -4,20 +4,36 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import AIService from './ai/ai-service.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Fix for __dirname in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const server = createServer(app);
+
+// CORS setup for production
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173",
-        methods: ["GET", "POST"]
+        origin: process.env.NODE_ENV === 'production' 
+            ? ["https://your-frontend-url.vercel.app"] 
+            : "http://localhost:5173",
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
-app.use(cors());
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? ["https://your-frontend-url.vercel.app"] 
+        : "http://localhost:5173",
+    credentials: true
+}));
+
 app.use(express.json());
 
 // In-memory storage
@@ -54,6 +70,11 @@ function createGame(hostId, category, rounds = 10) {
     games.set(gameCode, game);
     return game;
 }
+
+// Health check route
+app.get('/health', (req, res) => {
+    res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 
 // Routes
 app.post('/create-game', (req, res) => {
@@ -119,7 +140,7 @@ app.post('/join-game', (req, res) => {
     });
 });
 
-// Socket.IO connection handling
+// Socket.IO connection handling (SAME AS BEFORE - no changes needed)
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
@@ -354,6 +375,7 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 5174;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
