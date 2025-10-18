@@ -20,7 +20,7 @@ const server = createServer(app);
 const io = new Server(server, {
     cors: {
         origin: process.env.NODE_ENV === 'production' 
-            ? ["https://your-frontend-url.vercel.app"] 
+            ? ["https://psykos.vercel.app"] 
             : "http://localhost:5173",
         methods: ["GET", "POST"],
         credentials: true
@@ -29,7 +29,7 @@ const io = new Server(server, {
 
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? ["https://your-frontend-url.vercel.app"] 
+        ? ["https://psykos.vercel.app"] 
         : "http://localhost:5173",
     credentials: true
 }));
@@ -140,7 +140,7 @@ app.post('/join-game', (req, res) => {
     });
 });
 
-// Socket.IO connection handling (SAME AS BEFORE - no changes needed)
+// Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
