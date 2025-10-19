@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 const API_URL = import.meta.env.PROD 
   ? 'https://psykos-server-production.up.railway.app'
@@ -12,7 +13,9 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
   const [gameCode, setGameCode] = useState('')
   const [playerAvatar, setPlayerAvatar] = useState(null)
   const [soundMuted, setSoundMuted] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const fileInputRef = useRef(null)
+  const navigate = useNavigate()
 
   const categories = [
     {
@@ -60,9 +63,25 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
   const handleAvatarUpload = (event) => {
     const file = event.target.files[0]
     if (file) {
+      // Check file size (max 2MB)
+      if (file.size > 2 * 1024 * 1024) {
+        setUploadError('Image must be less than 2MB')
+        return
+      }
+
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        setUploadError('Please select an image file')
+        return
+      }
+
+      setUploadError('')
       const reader = new FileReader()
       reader.onload = (e) => {
         setPlayerAvatar(e.target.result)
+      }
+      reader.onerror = () => {
+        setUploadError('Error reading file. Please try another image.')
       }
       reader.readAsDataURL(file)
     }
@@ -98,7 +117,6 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
         isHost: true
       })
       
-      // Set gameState with ALL necessary properties
       setGameState({
         code: data.gameCode,
         category: data.category,
@@ -112,7 +130,8 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
         gameInProgress: false
       })
       
-      setCurrentScreen('lobby')
+      // Navigate with game code in URL
+      navigate(`/lobby?code=${data.gameCode}`)
     } catch (error) {
       console.error('Error creating game:', error)
       alert('Failed to create game. Please try again.')
@@ -148,26 +167,40 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
         isHost: false
       })
       
-      // Set gameState for joining player
       setGameState({
         code: gameCode.trim().toUpperCase(),
         category: data.category,
-        players: [], // Will be populated by socket events
+        players: [],
         state: 'lobby',
         gameInProgress: data.gameInProgress || false
       })
       
-      setCurrentScreen('lobby')
+      // Navigate with game code in URL
+      navigate(`/lobby?code=${gameCode.trim().toUpperCase()}`)
     } catch (error) {
       console.error('Error joining game:', error)
       alert('Failed to join game. Please check the code and try again.')
     }
   }
 
+  // Handle direct lobby access from URL
+  const handleDirectLobbyAccess = () => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const code = urlParams.get('code')
+    if (code) {
+      setGameCode(code)
+      setShowJoinGame(true)
+    }
+  }
+
+  React.useEffect(() => {
+    handleDirectLobbyAccess()
+  }, [])
+
   return (
     <>
       <div className="background-logo">PSYKOS</div>
-      <div className="background-tagline">by kosana</div>
+      <div className="background-tagline">BY KOSANA</div>
 
       <header className="header">
         <button 
@@ -247,6 +280,9 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
                 accept="image/*"
                 style={{ display: 'none' }}
               />
+              {uploadError && (
+                <p className="error-message">{uploadError}</p>
+              )}
             </div>
 
             <div className="flex flex-column">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import socket from '../socket'
 import WalkieTalkie from '../components/WalkieTalkie'
 
@@ -7,11 +8,24 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
   const [rounds, setRounds] = useState(10)
   const [notification, setNotification] = useState('')
   const [gameInProgress, setGameInProgress] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
 
   console.log('🔍 Lobby Debug - GameState:', gameState)
   console.log('🔍 Lobby Debug - PlayerInfo:', playerInfo)
 
   useEffect(() => {
+    // Check if we have game state, if not try to recover from URL
+    if (!gameState?.code) {
+      const urlParams = new URLSearchParams(location.search)
+      const code = urlParams.get('code')
+      if (code) {
+        // Redirect to home to rejoin
+        navigate('/')
+        return
+      }
+    }
+
     // Set initial players from gameState
     if (gameState?.players) {
       console.log('🎮 Setting initial players:', gameState.players)
@@ -26,7 +40,6 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
     if (gameState?.code && playerInfo?.id) {
       console.log('🚀 Joining game room:', gameState.code, 'Player:', playerInfo.id)
       
-      // CONNECT SOCKET FIRST
       socket.connect();
       
       socket.emit('join-game', {
@@ -48,7 +61,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
 
     const handleGameStarted = (data) => {
       console.log('🎯 Game started with data:', data)
-      setCurrentScreen('game')
+      navigate('/game')
     }
 
     const handleGameState = (state) => {
@@ -104,7 +117,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
       socket.off('player-left', handlePlayerLeft)
       socket.off('return-to-lobby', handleReturnToLobby)
     }
-  }, [gameState, playerInfo, setCurrentScreen])
+  }, [gameState, playerInfo, navigate, location])
 
   const startGame = () => {
     if (players.length >= 2) {
@@ -117,16 +130,16 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
 
   const copyCodeToClipboard = () => {
     if (gameState?.code) {
-      navigator.clipboard.writeText(gameState.code)
-      alert(`Game code ${gameState.code} copied to clipboard!`)
+      const joinUrl = `${window.location.origin}/?code=${gameState.code}`
+      navigator.clipboard.writeText(joinUrl)
+      alert(`Join link copied to clipboard!\n\nShare this link with friends:\n${joinUrl}`)
     }
   }
 
   return (
     <>
-      {/* Background Branding - Massive and Bright */}
       <div className="background-logo">PSYKOS</div>
-      <div className="background-tagline">by kosana</div>
+      <div className="background-tagline">BY KOSANA</div>
 
       <div className="card">
         <div className="lobby-container">
@@ -141,29 +154,31 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
           {/* Game In Progress Warning */}
           {gameInProgress && (
             <div className="notification warning">
-              ⚠️ Game in progress! You can join and use voice chat.
+              ⚠️ GAME IN PROGRESS! YOU CAN JOIN AND USE VOICE CHAT.
             </div>
           )}
 
-          {/* Game Code and Rounds Input - Top Section */}
-          <div className="game-code-section">
-            <div className="game-code-display" onClick={copyCodeToClipboard} title="Click to copy code">
+          {/* Game Info Section - Side by side layout */}
+          <div className="game-info-section">
+            <div className="game-code-card" onClick={copyCodeToClipboard} title="Click to copy join link">
+              <div className="game-code-header">JOIN CODE</div>
               <div className="game-code-text">
                 {gameState?.code || 'LOADING...'}
               </div>
-              <p className="game-code-label">CLICK TO COPY</p>
+              <div className="game-code-label">CLICK TO COPY JOIN LINK</div>
             </div>
 
             {/* Rounds Selection - Host Only */}
             {playerInfo?.isHost && !gameInProgress && (
-              <div className="rounds-input">
-                <label>ROUNDS:</label>
+              <div className="rounds-card">
+                <div className="rounds-header">ROUNDS</div>
                 <input 
                   type="number" 
                   min="1" 
                   max="20" 
                   value={rounds}
                   onChange={(e) => setRounds(parseInt(e.target.value))}
+                  className="rounds-input"
                   placeholder="10"
                 />
               </div>
@@ -193,7 +208,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
                 </div>
               ))}
               {players.length === 0 && (
-                <p>Waiting for players to join...</p>
+                <p>WAITING FOR PLAYERS TO JOIN...</p>
               )}
             </div>
           </div>
@@ -209,37 +224,36 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
                 >
                   START GAME ({players.length}/2)
                 </button>
-                <p>Minimum 2 players required to start</p>
+                <p>MINIMUM 2 PLAYERS REQUIRED TO START</p>
               </>
             ) : gameInProgress ? (
               <div className="waiting-message">
-                <p>Game in progress. You can use voice chat below.</p>
-                <p>{players.length} player(s) in game</p>
+                <p>GAME IN PROGRESS. YOU CAN USE VOICE CHAT BELOW.</p>
+                <p>{players.length} PLAYER(S) IN GAME</p>
               </div>
             ) : (
               <div className="waiting-message">
-                <p>Waiting for host to start the game...</p>
-                <p>{players.length} player(s) in lobby</p>
+                <p>WAITING FOR HOST TO START THE GAME...</p>
+                <p>{players.length} PLAYER(S) IN LOBBY</p>
               </div>
             )}
 
             <button 
-              className="btn" 
+              className="btn"
               onClick={() => {
                 socket.disconnect()
-                setCurrentScreen('home')
+                navigate('/')
               }}
             >
               LEAVE GAME
             </button>
           </div>
-
-          {/* Walkie Talkie - Always visible in lobby */}
-          <div className="walkie-talkie-lobby">
-            <WalkieTalkie />
-            <p className="walkie-talkie-label">Hold to talk to other players</p>
-          </div>
         </div>
+      </div>
+
+      {/* Walkie Talkie - Fixed position */}
+      <div className="walkie-talkie-fixed">
+        <WalkieTalkie />
       </div>
     </>
   )

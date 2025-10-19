@@ -21,13 +21,6 @@ function AppContent() {
     setCurrentScreen(path)
   }, [location])
 
-  // Update URL when screen changes
-  useEffect(() => {
-    if (currentScreen !== 'home' && location.pathname !== `/${currentScreen}`) {
-      navigate(`/${currentScreen}`)
-    }
-  }, [currentScreen, navigate, location])
-
   useEffect(() => {
     // Socket event listeners
     socket.on('game-state', (state) => {
@@ -38,7 +31,7 @@ function AppContent() {
     socket.on('game-started', (data) => {
       console.log('Game started:', data)
       setGameState(prev => ({ ...prev, ...data, state: 'playing' }))
-      setCurrentScreen('game')
+      navigate('/game')
     })
 
     socket.on('start-voting', (data) => {
@@ -54,19 +47,19 @@ function AppContent() {
     socket.on('show-results', (results) => {
       console.log('Showing results:', results)
       setGameState(prev => ({ ...prev, ...results, state: 'results' }))
-      setCurrentScreen('results')
+      navigate('/results')
     })
 
     socket.on('next-round', (roundData) => {
       console.log('Next round:', roundData)
       setGameState(prev => ({ ...prev, ...roundData, state: 'playing' }))
-      setCurrentScreen('game')
+      navigate('/game')
     })
 
     socket.on('game-over', (finalScores) => {
       console.log('Game over:', finalScores)
       setGameState(prev => ({ ...prev, ...finalScores, state: 'game-over' }))
-      setCurrentScreen('game-over')
+      navigate('/game-over')
     })
 
     socket.on('skip-votes-update', (data) => {
@@ -83,7 +76,7 @@ function AppContent() {
       socket.off('game-over')
       socket.off('skip-votes-update')
     }
-  }, [])
+  }, [navigate])
 
   const renderScreen = () => {
     switch (currentScreen) {
