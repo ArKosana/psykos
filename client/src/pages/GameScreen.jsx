@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import socket from '../socket'
+import WalkieTalkie from '../components/WalkieTalkie'
 
 const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
   const [answer, setAnswer] = useState('')
   const [hasSubmitted, setHasSubmitted] = useState(false)
   const [answerCount, setAnswerCount] = useState({ submitted: 0, total: 0 })
+  const [skipVotes, setSkipVotes] = useState({ skipVotes: 0, totalPlayers: 0 })
 
   useEffect(() => {
     // Set initial answer count
@@ -19,10 +21,16 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
       setAnswerCount(data)
     }
 
+    const handleSkipVotesUpdate = (data) => {
+      setSkipVotes(data)
+    }
+
     socket.on('answer-count-update', handleAnswerCountUpdate)
+    socket.on('skip-votes-update', handleSkipVotesUpdate)
 
     return () => {
       socket.off('answer-count-update', handleAnswerCountUpdate)
+      socket.off('skip-votes-update', handleSkipVotesUpdate)
     }
   }, [gameState])
 
@@ -31,6 +39,10 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
       socket.emit('submit-answer', gameState.code, answer.trim())
       setHasSubmitted(true)
     }
+  }
+
+  const skipQuestion = () => {
+    socket.emit('skip-question', gameState.code)
   }
 
   // Handle voting state
@@ -58,6 +70,7 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
                   index={index}
                   gameCode={gameState.code}
                   playerId={item.playerId}
+                  currentPlayerId={playerInfo?.id}
                 />
               ))
             ) : (
@@ -67,15 +80,22 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
             )}
           </div>
 
-          <button 
-            className="btn"
-            onClick={() => {
-              socket.disconnect()
-              setCurrentScreen('home')
-            }}
-          >
-            LEAVE GAME
-          </button>
+          <div className="action-buttons">
+            <button 
+              className="btn"
+              onClick={() => {
+                socket.disconnect()
+                setCurrentScreen('home')
+              }}
+            >
+              LEAVE GAME
+            </button>
+          </div>
+
+          {/* Walkie Talkie - Always visible */}
+          <div className="walkie-talkie-fixed">
+            <WalkieTalkie />
+          </div>
         </div>
       </div>
     )
@@ -98,40 +118,58 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
               className="answer-textarea"
               maxLength={500}
             />
-            <button 
-              className="btn"
-              onClick={submitAnswer}
-              disabled={!answer.trim()}
-            >
-              SUBMIT ANSWER
-            </button>
+            
+            <div className="game-actions">
+              <button 
+                className="btn"
+                onClick={submitAnswer}
+                disabled={!answer.trim()}
+              >
+                SUBMIT ANSWER
+              </button>
+              
+              <button 
+                className="btn skip-btn"
+                onClick={skipQuestion}
+              >
+                SKIP QUESTION ({skipVotes.skipVotes}/{skipVotes.totalPlayers})
+              </button>
+            </div>
           </div>
         ) : (
           <div className="waiting-message">
             <p>Answer submitted! Waiting for other players...</p>
             <p>{answerCount.submitted} / {answerCount.total} players answered</p>
+            <p>Skip votes: {skipVotes.skipVotes} / {skipVotes.totalPlayers}</p>
           </div>
         )}
 
-        <button 
-          className="btn"
-          onClick={() => {
-            socket.disconnect()
-            setCurrentScreen('home')
-          }}
-        >
-          LEAVE GAME
-        </button>
+        <div className="action-buttons">
+          <button 
+            className="btn"
+            onClick={() => {
+              socket.disconnect()
+              setCurrentScreen('home')
+            }}
+          >
+            LEAVE GAME
+          </button>
+        </div>
+
+        {/* Walkie Talkie - Always visible */}
+        <div className="walkie-talkie-fixed">
+          <WalkieTalkie />
+        </div>
       </div>
     </div>
   )
 }
 
-const AnswerItem = ({ answer, index, gameCode, playerId }) => {
+const AnswerItem = ({ answer, index, gameCode, playerId, currentPlayerId }) => {
   const [selected, setSelected] = useState(false)
 
   const handleVote = () => {
-    if (!selected) {
+    if (!selected && playerId !== currentPlayerId) {
       setSelected(true)
       socket.emit('submit-vote', gameCode, playerId)
     }
@@ -139,11 +177,12 @@ const AnswerItem = ({ answer, index, gameCode, playerId }) => {
 
   return (
     <div 
-      className={`answer-item ${selected ? 'selected' : ''}`}
+      className={`answer-item ${selected ? 'selected' : ''} ${playerId === currentPlayerId ? 'own-answer' : ''}`}
       onClick={handleVote}
     >
       <p className="answer-text">{answer}</p>
-      {selected && <p style={{fontSize: '0.7rem', margin: '0.5rem 0 0 0'}}>✓ Voted</p>}
+      {selected && <p className="vote-status">✓ Voted</p>}
+      {playerId === currentPlayerId && <p className="own-answer-label">Your answer</p>}
     </div>
   )
 }

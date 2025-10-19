@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { WORD_LIST } from './wordlist.js';
 
 // Fix for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -21,8 +22,8 @@ const server = createServer(app);
 const io = new Server(server, {
     cors: {
         origin: process.env.NODE_ENV === 'production' 
-            ? ["https://psykos.vercel.app"] 
-            : "http://localhost:5173",
+            ? ["https://psykos.vercel.app", "https://psykos-game.vercel.app"] 
+            : ["http://localhost:5173", "http://localhost:5174"],
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -30,8 +31,8 @@ const io = new Server(server, {
 
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? ["https://psykos.vercel.app"] 
-        : "http://localhost:5173",
+        ? ["https://psykos.vercel.app", "https://psykos-game.vercel.app"] 
+        : ["http://localhost:5173", "http://localhost:5174"],
     credentials: true
 }));
 
@@ -41,10 +42,25 @@ app.use(express.json());
 const games = new Map();
 const players = new Map();
 const connectedSockets = new Map();
+const usedWords = new Set();
 
 // Utility functions
 function generateGameCode() {
-    return Math.random().toString(36).substring(2, 6).toUpperCase();
+    // Get available words (not used in current games)
+    const availableWords = WORD_LIST.filter(word => !usedWords.has(word));
+    
+    if (availableWords.length === 0) {
+        // If all words are used, fall back to random code
+        return Math.random().toString(36).substring(2, 6).toUpperCase();
+    }
+    
+    const randomWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+    usedWords.add(randomWord);
+    return randomWord;
+}
+
+function cleanupGameCode(gameCode) {
+    usedWords.delete(gameCode);
 }
 
 function getGame(gameCode) {
@@ -66,10 +82,23 @@ function createGame(hostId, category, rounds = 10) {
         votes: new Map(),
         scores: new Map(),
         readyPlayers: new Set(),
-        usedQuestions: new Set()
+        usedQuestions: new Set(),
+        skipVotes: new Set(),
+        gameInProgress: false
     };
     games.set(gameCode, game);
     return game;
+}
+
+function formatQuestion(question, category) {
+    // Remove category names and descriptions from questions
+    const cleanQuestion = question
+        .replace(/^[^:]+:\s*/, '') // Remove "Category Name: "
+        .replace(/\([^)]*\)/g, '') // Remove parentheses content
+        .replace(/\[[^\]]*\]/g, '') // Remove bracket content
+        .trim();
+    
+    return cleanQuestion;
 }
 
 // Health check route
@@ -112,10 +141,6 @@ app.post('/join-game', (req, res) => {
         return res.status(404).json({ error: 'Game not found' });
     }
     
-    if (game.state !== 'lobby') {
-        return res.status(400).json({ error: 'Game already in progress' });
-    }
-    
     const playerId = uuidv4();
     const player = {
         id: playerId,
@@ -137,7 +162,8 @@ app.post('/join-game', (req, res) => {
     res.json({ 
         playerId: playerId,
         category: game.category,
-        rounds: game.rounds
+        rounds: game.rounds,
+        gameInProgress: game.gameInProgress
     });
 });
 
@@ -178,7 +204,8 @@ io.on('connection', (socket) => {
                 players: Array.from(game.players.values()),
                 state: game.state,
                 currentRound: game.currentRound,
-                scores: Array.from(game.scores.entries())
+                scores: Array.from(game.scores.entries()),
+                gameInProgress: game.gameInProgress
             });
 
             // Update answer count for all players if game is in progress
@@ -188,6 +215,12 @@ io.on('connection', (socket) => {
                     total: game.players.size
                 });
             }
+
+            // Update skip votes count
+            io.to(gameCode).emit('skip-votes-update', {
+                skipVotes: game.skipVotes.size,
+                totalPlayers: game.players.size
+            });
         }
     });
 
@@ -196,6 +229,7 @@ io.on('connection', (socket) => {
         if (game && game.host === socket.playerId && game.players.size >= 2) {
             game.state = 'playing';
             game.currentRound = 1;
+            game.gameInProgress = true;
             
             // Generate questions for all rounds
             const playerNames = Array.from(game.players.values()).map(p => p.name);
@@ -210,7 +244,8 @@ io.on('connection', (socket) => {
                     attempts++;
                 } while (game.usedQuestions.has(question) && attempts < 3);
                 
-                game.questions.push(question);
+                const formattedQuestion = formatQuestion(question, game.category);
+                game.questions.push(formattedQuestion);
                 game.usedQuestions.add(question);
             }
             
@@ -235,45 +270,47 @@ io.on('connection', (socket) => {
             
             // Check if all players have answered
             if (game.answers.size === game.players.size) {
-                // Start voting phase
-                const answersArray = Array.from(game.answers.entries()).map(([playerId, answer]) => ({
-                    playerId,
-                    answer
-                }));
-                
-                const shuffledAnswers = answersArray.sort(() => Math.random() - 0.5);
-                io.to(gameCode).emit('start-voting', {
-                    answers: shuffledAnswers,
-                    question: game.questions[game.currentRound - 1]
-                });
+                startVotingPhase(game);
             }
         }
     });
 
     socket.on('submit-vote', (gameCode, votedPlayerId) => {
         const game = getGame(gameCode);
-        if (game) {
+        if (game && game.state === 'voting') {
+            // Players cannot vote for themselves
+            if (socket.playerId === votedPlayerId) {
+                socket.emit('vote-error', 'You cannot vote for yourself');
+                return;
+            }
+            
             game.votes.set(socket.playerId, votedPlayerId);
             
-            // Update scores
-            if (!game.scores.has(votedPlayerId)) {
-                game.scores.set(votedPlayerId, 0);
-            }
-            game.scores.set(votedPlayerId, game.scores.get(votedPlayerId) + 10);
+            // Update scores based on category
+            updateScores(game, socket.playerId, votedPlayerId);
             
             // Check if all players have voted
             if (game.votes.size === game.players.size) {
-                const results = {
-                    question: game.questions[game.currentRound - 1],
-                    answers: Array.from(game.answers.entries()),
-                    votes: Array.from(game.votes.entries()),
-                    scores: Array.from(game.scores.entries()),
-                    players: Array.from(game.players.values())
-                };
-                
-                io.to(gameCode).emit('show-results', results);
-                game.answers.clear();
-                game.votes.clear();
+                showResults(game);
+            }
+        }
+    });
+
+    socket.on('skip-question', (gameCode) => {
+        const game = getGame(gameCode);
+        if (game && game.state === 'playing') {
+            game.skipVotes.add(socket.playerId);
+            
+            // Update skip votes count for all players
+            io.to(gameCode).emit('skip-votes-update', {
+                skipVotes: game.skipVotes.size,
+                totalPlayers: game.players.size
+            });
+            
+            // Check if majority wants to skip
+            const majority = Math.ceil(game.players.size / 2);
+            if (game.skipVotes.size >= majority) {
+                skipToNextRound(game);
             }
         }
     });
@@ -291,36 +328,33 @@ io.on('connection', (socket) => {
             });
             
             if (game.readyPlayers.size === game.players.size) {
-                // All players ready, start next round
-                game.currentRound++;
-                if (game.currentRound > game.rounds) {
-                    // Game over
-                    const finalScores = Array.from(game.scores.entries())
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([playerId, score]) => {
-                            const player = game.players.get(playerId);
-                            return {
-                                playerId,
-                                name: player.name,
-                                score: score
-                            };
-                        });
-                    
-                    io.to(gameCode).emit('game-over', {
-                        scores: finalScores,
-                        winner: finalScores[0]
-                    });
-                    
-                    games.delete(gameCode);
-                } else {
-                    // Next round
-                    io.to(gameCode).emit('next-round', {
-                        round: game.currentRound,
-                        question: game.questions[game.currentRound - 1]
-                    });
-                    game.readyPlayers.clear();
-                }
+                startNextRound(game);
             }
+        }
+    });
+
+    // Voice chat functionality
+    socket.on('voice-start', () => {
+        const gameCode = socket.gameCode;
+        if (gameCode) {
+            socket.to(gameCode).emit('voice-start', socket.playerId);
+        }
+    });
+
+    socket.on('voice-data', (data) => {
+        const gameCode = socket.gameCode;
+        if (gameCode) {
+            socket.to(gameCode).emit('voice-data', {
+                playerId: socket.playerId,
+                data: data
+            });
+        }
+    });
+
+    socket.on('voice-end', () => {
+        const gameCode = socket.gameCode;
+        if (gameCode) {
+            socket.to(gameCode).emit('voice-end', socket.playerId);
         }
     });
 
@@ -336,6 +370,10 @@ io.on('connection', (socket) => {
                 players.delete(playerId);
                 connectedSockets.delete(playerId);
                 
+                // Remove from skip votes and ready players
+                game.skipVotes.delete(playerId);
+                game.readyPlayers.delete(playerId);
+                
                 // Notify all players that someone left
                 io.to(game.code).emit('player-left', {
                     playerId: playerId,
@@ -345,6 +383,7 @@ io.on('connection', (socket) => {
                 
                 if (game.players.size === 0) {
                     // No players left, delete game
+                    cleanupGameCode(game.code);
                     games.delete(game.code);
                     console.log('Game deleted:', game.code);
                 } else if (game.players.size < 2 && game.state !== 'lobby') {
@@ -354,6 +393,7 @@ io.on('connection', (socket) => {
                     game.answers.clear();
                     game.votes.clear();
                     game.readyPlayers.clear();
+                    game.skipVotes.clear();
                     
                     io.to(game.code).emit('return-to-lobby', {
                         reason: 'Not enough players to continue'
@@ -369,10 +409,134 @@ io.on('connection', (socket) => {
                 
                 // Update players list
                 io.to(game.code).emit('players-updated', Array.from(game.players.values()));
+                
+                // Update skip votes count
+                io.to(game.code).emit('skip-votes-update', {
+                    skipVotes: game.skipVotes.size,
+                    totalPlayers: game.players.size
+                });
             }
         }
         console.log('User disconnected:', socket.id);
     });
+
+    function startVotingPhase(game) {
+        const answersArray = Array.from(game.answers.entries()).map(([playerId, answer]) => ({
+            playerId,
+            answer,
+            playerName: game.players.get(playerId)?.name || 'Unknown'
+        }));
+        
+        const shuffledAnswers = answersArray.sort(() => Math.random() - 0.5);
+        game.state = 'voting';
+        
+        io.to(game.code).emit('start-voting', {
+            answers: shuffledAnswers,
+            question: game.questions[game.currentRound - 1],
+            category: game.category
+        });
+    }
+
+    function updateScores(game, voterId, votedPlayerId) {
+        // Different scoring based on category
+        switch (game.category) {
+            case 'acronyms':
+            case 'is-that-a-fact':
+                // 10 points for correct answer, 20 points for tricking others
+                // This would need additional logic to track correct answers
+                if (!game.scores.has(votedPlayerId)) {
+                    game.scores.set(votedPlayerId, 0);
+                }
+                game.scores.set(votedPlayerId, game.scores.get(votedPlayerId) + 10);
+                break;
+                
+            case 'truth-comes-out':
+            case 'naked-truth':
+                // AI-based scoring handled separately
+                if (!game.scores.has(votedPlayerId)) {
+                    game.scores.set(votedPlayerId, 0);
+                }
+                game.scores.set(votedPlayerId, game.scores.get(votedPlayerId) + 10);
+                break;
+                
+            default:
+                // Default scoring: 10 points per vote
+                if (!game.scores.has(votedPlayerId)) {
+                    game.scores.set(votedPlayerId, 0);
+                }
+                game.scores.set(votedPlayerId, game.scores.get(votedPlayerId) + 10);
+        }
+    }
+
+    function showResults(game) {
+        const results = {
+            question: game.questions[game.currentRound - 1],
+            answers: Array.from(game.answers.entries()),
+            votes: Array.from(game.votes.entries()),
+            scores: Array.from(game.scores.entries()),
+            players: Array.from(game.players.values()),
+            category: game.category
+        };
+        
+        io.to(game.code).emit('show-results', results);
+        
+        // Reset for next round
+        game.answers.clear();
+        game.votes.clear();
+        game.skipVotes.clear();
+        game.state = 'results';
+    }
+
+    function skipToNextRound(game) {
+        game.currentRound++;
+        if (game.currentRound > game.rounds) {
+            endGame(game);
+        } else {
+            io.to(game.code).emit('next-round', {
+                round: game.currentRound,
+                question: game.questions[game.currentRound - 1],
+                skipped: true
+            });
+            game.answers.clear();
+            game.skipVotes.clear();
+        }
+    }
+
+    function startNextRound(game) {
+        game.currentRound++;
+        if (game.currentRound > game.rounds) {
+            endGame(game);
+        } else {
+            io.to(game.code).emit('next-round', {
+                round: game.currentRound,
+                question: game.questions[game.currentRound - 1]
+            });
+            game.readyPlayers.clear();
+            game.skipVotes.clear();
+            game.state = 'playing';
+        }
+    }
+
+    function endGame(game) {
+        const finalScores = Array.from(game.scores.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([playerId, score]) => {
+                const player = game.players.get(playerId);
+                return {
+                    playerId,
+                    name: player.name,
+                    score: score
+                };
+            });
+        
+        io.to(game.code).emit('game-over', {
+            scores: finalScores,
+            winner: finalScores[0]
+        });
+        
+        cleanupGameCode(game.code);
+        games.delete(game.code);
+    }
 });
 
 const PORT = process.env.PORT || 5174;

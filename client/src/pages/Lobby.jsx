@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import socket from '../socket'
+import WalkieTalkie from '../components/WalkieTalkie'
 
 const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
   const [players, setPlayers] = useState([])
   const [rounds, setRounds] = useState(10)
   const [notification, setNotification] = useState('')
+  const [gameInProgress, setGameInProgress] = useState(false)
 
   console.log('🔍 Lobby Debug - GameState:', gameState)
   console.log('🔍 Lobby Debug - PlayerInfo:', playerInfo)
@@ -14,6 +16,10 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
     if (gameState?.players) {
       console.log('🎮 Setting initial players:', gameState.players)
       setPlayers(gameState.players)
+    }
+
+    if (gameState?.gameInProgress) {
+      setGameInProgress(true)
     }
 
     // Join game room
@@ -50,6 +56,9 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
       if (state.players) {
         setPlayers(state.players)
       }
+      if (state.gameInProgress) {
+        setGameInProgress(true)
+      }
     }
 
     const handlePlayerLeft = (data) => {
@@ -61,6 +70,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
     const handleReturnToLobby = (data) => {
       console.log('🏠 Returning to lobby:', data.reason)
       setNotification(data.reason)
+      setGameInProgress(false)
       setTimeout(() => setNotification(''), 5000)
     }
 
@@ -128,6 +138,13 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
             </div>
           )}
 
+          {/* Game In Progress Warning */}
+          {gameInProgress && (
+            <div className="notification warning">
+              ⚠️ Game in progress! You can join and use voice chat.
+            </div>
+          )}
+
           {/* Game Code and Rounds Input - Top Section */}
           <div className="game-code-section">
             <div className="game-code-display" onClick={copyCodeToClipboard} title="Click to copy code">
@@ -138,7 +155,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
             </div>
 
             {/* Rounds Selection - Host Only */}
-            {playerInfo?.isHost && (
+            {playerInfo?.isHost && !gameInProgress && (
               <div className="rounds-input">
                 <label>ROUNDS:</label>
                 <input 
@@ -183,7 +200,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
 
           {/* Action Buttons */}
           <div className="action-buttons">
-            {playerInfo?.isHost ? (
+            {playerInfo?.isHost && !gameInProgress ? (
               <>
                 <button 
                   className="btn" 
@@ -194,6 +211,11 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
                 </button>
                 <p>Minimum 2 players required to start</p>
               </>
+            ) : gameInProgress ? (
+              <div className="waiting-message">
+                <p>Game in progress. You can use voice chat below.</p>
+                <p>{players.length} player(s) in game</p>
+              </div>
             ) : (
               <div className="waiting-message">
                 <p>Waiting for host to start the game...</p>
@@ -210,6 +232,12 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
             >
               LEAVE GAME
             </button>
+          </div>
+
+          {/* Walkie Talkie - Always visible in lobby */}
+          <div className="walkie-talkie-lobby">
+            <WalkieTalkie />
+            <p className="walkie-talkie-label">Hold to talk to other players</p>
           </div>
         </div>
       </div>

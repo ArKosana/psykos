@@ -1,17 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { socket } from '../socket'
+import socket from '../socket'
 
 function WalkieTalkie() {
   const [isTalking, setIsTalking] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
+  const audioContextRef = useRef(null)
+  const touchTimerRef = useRef(null)
 
   useEffect(() => {
     // Initialize media recorder
     const initMediaRecorder = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          } 
+        })
+        
         const mediaRecorder = new MediaRecorder(stream, {
           mimeType: 'audio/webm;codecs=opus'
         })
@@ -29,20 +38,50 @@ function WalkieTalkie() {
         }
         
         mediaRecorderRef.current = mediaRecorder
+        
+        // Initialize audio context for playback
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)()
+        
       } catch (error) {
         console.error('Error accessing microphone:', error)
+        alert('Microphone access is required for voice chat. Please allow microphone permissions.')
       }
     }
 
     initMediaRecorder()
+
+    // Set up audio playback
+    const handleVoiceData = (data) => {
+      playAudioData(data.data)
+    }
+
+    socket.on('voice-data', handleVoiceData)
 
     // Cleanup
     return () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop()
       }
+      if (touchTimerRef.current) {
+        clearTimeout(touchTimerRef.current)
+      }
+      socket.off('voice-data', handleVoiceData)
     }
   }, [])
+
+  const playAudioData = async (arrayBuffer) => {
+    try {
+      if (audioContextRef.current && arrayBuffer) {
+        const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer)
+        const source = audioContextRef.current.createBufferSource()
+        source.buffer = audioBuffer
+        source.connect(audioContextRef.current.destination)
+        source.start()
+      }
+    } catch (error) {
+      console.error('Error playing audio:', error)
+    }
+  }
 
   const sendAudioData = (audioBlob) => {
     const reader = new FileReader()
@@ -80,10 +119,18 @@ function WalkieTalkie() {
   const handleTouchStart = (e) => {
     e.preventDefault()
     startTalking()
+    
+    // Prevent long press context menu on mobile
+    touchTimerRef.current = setTimeout(() => {
+      // Visual feedback for long press
+    }, 100)
   }
 
   const handleTouchEnd = (e) => {
     e.preventDefault()
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current)
+    }
     stopTalking()
   }
 
@@ -103,6 +150,11 @@ function WalkieTalkie() {
     }
   }
 
+  const handleContextMenu = (e) => {
+    e.preventDefault()
+    return false
+  }
+
   return (
     <div className="walkie-talkie-container">
       <button
@@ -112,27 +164,14 @@ function WalkieTalkie() {
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
+        onContextMenu={handleContextMenu}
         title="Hold to talk"
       >
         🎤
       </button>
       
       {isTalking && (
-        <div style={{
-          position: 'absolute',
-          top: '-30px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'var(--surface)',
-          color: 'var(--primary)',
-          padding: '0.25rem 0.75rem',
-          borderRadius: '12px',
-          fontSize: '0.7rem',
-          fontWeight: '600',
-          whiteSpace: 'nowrap',
-          border: '1px solid var(--border-light)',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.3)'
-        }}>
+        <div className="talking-indicator">
           🎙️ Talking...
         </div>
       )}

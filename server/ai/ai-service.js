@@ -13,16 +13,17 @@ class AIService {
             }
 
             const categoryPrompts = {
-                'caption-this': `Generate a funny, interesting image description that people can write captions for. Make it visual and humorous.`,
-                'acronyms': `Generate an acronym that people might not know the real meaning of. Provide the acronym and its real meaning, but not the one's most people are familiar with `,
-                'is-that-a-fact': `Generate a surprising but true fact about an interesting topic (science, history, animals, etc.). Make it believable but surprising, a maximum of 2 or 3 sentences.`,
-                'truth-comes-out': `Generate a personal question about specific players. Use player names like "What is ${playerNames[0]}'s guilty pleasure?" instead of "your guilty pleasure or when is ${playerNames[0]}'s birthday? etc". Make it fun and revealing. Available players: ${playerNames.join(', ')}.`,
-                'search-history': `Generate the beginning of a funny search query that people would complete (like "why do cats..." or "how to impress...").`,
-                'ice-breaker': `Generate a fun get-to-know-you question for a group of people and make it specific to players ${playerNames[0]}. Available players: ${playerNames.join(', ')}.`,
-                'naked-truth': `Generate an adult-themed (18+) personal question for specific players. Use player names like "What is ${playerNames[0]}'s wildest fantasy?" instead of "your wildest fantasy". Keep it fun but mature. Available players: ${playerNames.join(', ')}.`
+                'caption-this': `Generate a funny, interesting image description that people can write captions for. Make it visual and humorous. Return ONLY the description, no category names.`,
+                'acronyms': `Generate a well-known acronym (like NASA, FBI, etc.) and its real expansion. Format: "ACRONYM - Real Expansion". Return ONLY the acronym and expansion, no explanations.`,
+                'is-that-a-fact': `Generate a surprising but true fact. The fact should be about a single topic/word. Return ONLY the fact, no category names.`,
+                'truth-comes-out': `Generate a personal question about specific players. Use player names like "What is ${playerNames[0]}'s shoe size?" or "What did ${playerNames[1]} eat for breakfast?". Available players: ${playerNames.join(', ')}. Return ONLY the question.`,
+                'search-history': `Generate the beginning of a funny search query that people would complete (like "why do cats..." or "how to impress..."). Return ONLY the query beginning.`,
+                'ice-breaker': `Generate a fun get-to-know-you question. Can be general or specific to players. Available players: ${playerNames.join(', ')}. Return ONLY the question.`,
+                'naked-truth': `Generate an adult-themed (18+) personal question for specific players. Use player names. Available players: ${playerNames.join(', ')}. Return ONLY the question.`,
+                'who-among-us': `Generate a "who among us" question like "Who among us is most likely to..." or "Who among us would...". Available players: ${playerNames.join(', ')}. Return ONLY the question.`
             };
 
-            const systemPrompt = `You are a party game content generator. Generate engaging, fun content for a social deduction game similar to Psych!. Keep responses concise and entertaining. For personal questions, always use player names instead of "you" or "your". and keep it as unique and fun as you can also keep it short and entertaining. Try not to repeat the questions.`;
+            const systemPrompt = `You are a party game content generator. Generate engaging, fun content. Keep responses concise. For personal questions, use player names. NEVER include category names, descriptions, or any metadata in your response. Only return the pure content.`;
             
             const userPrompt = `${categoryPrompts[category]}\n\n${prompt || 'Generate content for this category:'}`;
 
@@ -39,7 +40,7 @@ class AIService {
                         { role: 'user', content: userPrompt }
                     ],
                     temperature: 0.8,
-                    max_tokens: 150
+                    max_tokens: 100
                 })
             });
 
@@ -55,18 +56,77 @@ class AIService {
         }
     }
 
+    async evaluateAnswers(question, answers, correctAnswer) {
+        try {
+            if (!this.apiKey) {
+                return this.getFallbackScores(answers.length);
+            }
+
+            const prompt = `
+Question: "${question}"
+Correct Answer: "${correctAnswer}"
+
+Evaluate these answers on how close they are to the correct answer on a scale of 1-10:
+${answers.map((answer, index) => `${index + 1}. "${answer}"`).join('\n')}
+
+Return ONLY a comma-separated list of scores in the same order. Example: "7,5,9,3"
+            `.trim();
+
+            const response = await fetch(this.baseURL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'llama-3.1-8b-instant',
+                    messages: [
+                        { 
+                            role: 'system', 
+                            content: 'You are a scoring assistant. Evaluate answers based on accuracy and relevance to the correct answer. Return ONLY comma-separated numbers.' 
+                        },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 50
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const scoresText = data.choices[0].message.content.trim();
+            const scores = scoresText.split(',').map(score => {
+                const num = parseInt(score.trim());
+                return isNaN(num) ? 5 : Math.min(10, Math.max(1, num));
+            });
+
+            return scores;
+        } catch (error) {
+            console.error('AI Scoring Error:', error);
+            return this.getFallbackScores(answers.length);
+        }
+    }
+
     getFallbackContent(category, playerNames = []) {
         const randomPlayer = playerNames[Math.floor(Math.random() * playerNames.length)] || 'Player';
         const fallbacks = {
             'caption-this': 'A cat wearing sunglasses and a tiny hat, sitting at a computer keyboard looking very professional.',
             'acronyms': 'NASA - National Aeronautics and Space Administration',
             'is-that-a-fact': 'Octopuses have three hearts and blue blood.',
-            'truth-comes-out': `What is ${randomPlayer}'s most embarrassing childhood memory?`,
+            'truth-comes-out': `What is ${randomPlayer}'s shoe size?`,
             'search-history': 'how to explain to your boss that...',
-            'ice-breaker': 'If you could have any superpower, what would it be and why?',
-            'naked-truth': `What is ${randomPlayer}'s guilty pleasure that they would never admit in public?`
+            'ice-breaker': `What would you name ${randomPlayer} if you were their parent?`,
+            'naked-truth': `What is ${randomPlayer}'s guilty pleasure?`,
+            'who-among-us': `Who among us is most likely to become a millionaire?`
         };
         return fallbacks[category] || 'Create something fun and creative!';
+    }
+
+    getFallbackScores(count) {
+        return Array(count).fill(5); // Return array of 5s as fallback
     }
 
     async generateQuestion(category, playerNames = []) {

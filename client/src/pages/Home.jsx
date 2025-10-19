@@ -1,6 +1,9 @@
 import React, { useState, useRef } from 'react'
 
-const API_URL = 'https://psykos-server-production.up.railway.app';
+const API_URL = import.meta.env.PROD 
+  ? 'https://psykos-server-production.up.railway.app'
+  : 'http://localhost:5174';
+
 const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [showCreateGame, setShowCreateGame] = useState(false)
@@ -46,6 +49,11 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
       id: 'naked-truth',
       name: 'THE NAKED TRUTH',
       description: 'Adult-themed personal questions (18+)'
+    },
+    {
+      id: 'who-among-us',
+      name: 'WHO AMONG US',
+      description: 'Guess who among the players fits the description'
     }
   ]
 
@@ -100,7 +108,8 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
           avatar: playerAvatar,
           isHost: true
         }],
-        state: 'lobby'
+        state: 'lobby',
+        gameInProgress: false
       })
       
       setCurrentScreen('lobby')
@@ -144,7 +153,8 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
         code: gameCode.trim().toUpperCase(),
         category: data.category,
         players: [], // Will be populated by socket events
-        state: 'lobby'
+        state: 'lobby',
+        gameInProgress: data.gameInProgress || false
       })
       
       setCurrentScreen('lobby')
