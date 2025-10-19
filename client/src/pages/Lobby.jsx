@@ -87,6 +87,12 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
       setTimeout(() => setNotification(''), 5000)
     }
 
+    const handleHostChanged = (newHostId) => {
+      console.log('👑 Host changed to:', newHostId)
+      setNotification('Host has been transferred to another player')
+      setTimeout(() => setNotification(''), 3000)
+    }
+
     // Listen for connection events
     const handleConnect = () => {
       console.log('✅ Socket connected!')
@@ -105,6 +111,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
     socket.on('game-state', handleGameState)
     socket.on('player-left', handlePlayerLeft)
     socket.on('return-to-lobby', handleReturnToLobby)
+    socket.on('host-changed', handleHostChanged)
 
     return () => {
       // Clean up all event listeners
@@ -116,6 +123,7 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
       socket.off('game-state', handleGameState)
       socket.off('player-left', handlePlayerLeft)
       socket.off('return-to-lobby', handleReturnToLobby)
+      socket.off('host-changed', handleHostChanged)
     }
   }, [gameState, playerInfo, navigate, location])
 
@@ -141,113 +149,108 @@ const Lobby = ({ setCurrentScreen, gameState, playerInfo }) => {
       <div className="background-logo">PSYKOS</div>
       <div className="background-tagline">BY KOSANA</div>
 
-      <div className="card">
-        <div className="lobby-container">
-          
-          {/* Notification */}
-          {notification && (
-            <div className="notification">
-              {notification}
+      {/* Bottom Branding */}
+      <div className="bottom-branding">
+        <div className="bottom-tagline">BY KOSANA</div>
+      </div>
+
+      <div className="lobby-container">
+        
+        {/* Notification */}
+        {notification && (
+          <div className="notification">
+            {notification}
+          </div>
+        )}
+
+        {/* Game In Progress Warning */}
+        {gameInProgress && (
+          <div className="notification warning">
+            ⚠️ GAME IN PROGRESS! YOU CAN JOIN AND USE VOICE CHAT.
+          </div>
+        )}
+
+        {/* Game Info Section - Side by side layout */}
+        <div className="game-info-section">
+          <div className="game-code-card" onClick={copyCodeToClipboard} title="Click to copy join link">
+            <div className="game-code-header">JOIN CODE</div>
+            <div className="game-code-text">
+              {gameState?.code || 'LOADING...'}
+            </div>
+            <div className="game-code-label">CLICK TO COPY JOIN LINK</div>
+          </div>
+
+          {/* Rounds Selection - Host Only */}
+          {playerInfo?.isHost && !gameInProgress && (
+            <div className="rounds-card">
+              <div className="rounds-header">ROUNDS</div>
+              <input 
+                type="number" 
+                min="1" 
+                max="20" 
+                value={rounds}
+                onChange={(e) => setRounds(parseInt(e.target.value))}
+                className="rounds-input"
+                placeholder="10"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Category Display */}
+        <div className="category-display">
+          {gameState?.category ? gameState.category.replace(/-/g, ' ').toUpperCase() : 'LOADING CATEGORY...'}
+        </div>
+
+        {/* Players Section */}
+        <div className="players-section">
+          <h3 className="players-label">PLAYERS ({players.length})</h3>
+          <div className="players-container">
+            {players.map(player => (
+              <div 
+                key={player.id}
+                className={`player-bubble ${player.isHost ? 'host' : ''} ${players.length > 6 ? 'small' : ''}`}
+                title={player.name + (player.isHost ? ' (Host)' : '')}
+              >
+                {player.avatar ? (
+                  <img src={player.avatar} alt={player.name} />
+                ) : (
+                  player.name.charAt(0).toUpperCase()
+                )}
+              </div>
+            ))}
+            {players.length === 0 && (
+              <p>WAITING FOR PLAYERS TO JOIN...</p>
+            )}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="action-buttons">
+          {playerInfo?.isHost && !gameInProgress ? (
+            <>
+              <button 
+                className="btn" 
+                onClick={startGame} 
+                disabled={players.length < 2}
+              >
+                START GAME ({players.length}/2)
+              </button>
+              <p>MINIMUM 2 PLAYERS REQUIRED TO START</p>
+            </>
+          ) : gameInProgress ? (
+            <div className="waiting-message">
+              <p>GAME IN PROGRESS. YOU CAN USE VOICE CHAT BELOW.</p>
+              <p>{players.length} PLAYER(S) IN GAME</p>
+            </div>
+          ) : (
+            <div className="waiting-message">
+              <p>WAITING FOR HOST TO START THE GAME...</p>
+              <p>{players.length} PLAYER(S) IN LOBBY</p>
             </div>
           )}
 
-          {/* Game In Progress Warning */}
-          {gameInProgress && (
-            <div className="notification warning">
-              ⚠️ GAME IN PROGRESS! YOU CAN JOIN AND USE VOICE CHAT.
-            </div>
-          )}
-
-          {/* Game Info Section - Side by side layout */}
-          <div className="game-info-section">
-            <div className="game-code-card" onClick={copyCodeToClipboard} title="Click to copy join link">
-              <div className="game-code-header">JOIN CODE</div>
-              <div className="game-code-text">
-                {gameState?.code || 'LOADING...'}
-              </div>
-              <div className="game-code-label">CLICK TO COPY JOIN LINK</div>
-            </div>
-
-            {/* Rounds Selection - Host Only */}
-            {playerInfo?.isHost && !gameInProgress && (
-              <div className="rounds-card">
-                <div className="rounds-header">ROUNDS</div>
-                <input 
-                  type="number" 
-                  min="1" 
-                  max="20" 
-                  value={rounds}
-                  onChange={(e) => setRounds(parseInt(e.target.value))}
-                  className="rounds-input"
-                  placeholder="10"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Category Display */}
-          <div className="category-display">
-            {gameState?.category ? gameState.category.replace(/-/g, ' ').toUpperCase() : 'LOADING CATEGORY...'}
-          </div>
-
-          {/* Players Section */}
-          <div className="players-section">
-            <h3 className="players-label">PLAYERS ({players.length})</h3>
-            <div className="players-container">
-              {players.map(player => (
-                <div 
-                  key={player.id}
-                  className={`player-bubble ${player.isHost ? 'host' : ''} ${players.length > 6 ? 'small' : ''}`}
-                  title={player.name + (player.isHost ? ' (Host)' : '')}
-                >
-                  {player.avatar ? (
-                    <img src={player.avatar} alt={player.name} />
-                  ) : (
-                    player.name.charAt(0).toUpperCase()
-                  )}
-                </div>
-              ))}
-              {players.length === 0 && (
-                <p>WAITING FOR PLAYERS TO JOIN...</p>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="action-buttons">
-            {playerInfo?.isHost && !gameInProgress ? (
-              <>
-                <button 
-                  className="btn" 
-                  onClick={startGame} 
-                  disabled={players.length < 2}
-                >
-                  START GAME ({players.length}/2)
-                </button>
-                <p>MINIMUM 2 PLAYERS REQUIRED TO START</p>
-              </>
-            ) : gameInProgress ? (
-              <div className="waiting-message">
-                <p>GAME IN PROGRESS. YOU CAN USE VOICE CHAT BELOW.</p>
-                <p>{players.length} PLAYER(S) IN GAME</p>
-              </div>
-            ) : (
-              <div className="waiting-message">
-                <p>WAITING FOR HOST TO START THE GAME...</p>
-                <p>{players.length} PLAYER(S) IN LOBBY</p>
-              </div>
-            )}
-
-            <button 
-              className="btn"
-              onClick={() => {
-                socket.disconnect()
-                navigate('/')
-              }}
-            >
-              LEAVE GAME
-            </button>
-          </div>
+          {/* Leave game button removed - now in menu */}
         </div>
       </div>
 

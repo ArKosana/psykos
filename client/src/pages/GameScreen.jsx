@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import socket from '../socket'
 import WalkieTalkie from '../components/WalkieTalkie'
 
@@ -7,6 +8,7 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
   const [hasSubmitted, setHasSubmitted] = useState(false)
   const [answerCount, setAnswerCount] = useState({ submitted: 0, total: 0 })
   const [skipVotes, setSkipVotes] = useState({ skipVotes: 0, totalPlayers: 0 })
+  const navigate = useNavigate()
 
   useEffect(() => {
     // Set initial answer count
@@ -52,114 +54,90 @@ const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
       : (gameState.votingAnswers?.answers || [])
 
     return (
-      <div className="card">
-        <div className="voting-container">
-          <div className="question-display">
-            <h3 className="question-text">{gameState.question || gameState.votingAnswers?.question}</h3>
-            <p className="round-info">Round {gameState.round} of {gameState.totalRounds}</p>
-          </div>
+      <div className="voting-container">
+        <div className="question-display">
+          <h3 className="question-text">{gameState.question || gameState.votingAnswers?.question}</h3>
+          <p className="round-info">Round {gameState.round} of {gameState.totalRounds}</p>
+        </div>
 
-          <h3>Vote for the Best Answer:</h3>
-          
-          <div className="answers-list">
-            {votingAnswers.length > 0 ? (
-              votingAnswers.map((item, index) => (
-                <AnswerItem 
-                  key={index}
-                  answer={item.answer}
-                  index={index}
-                  gameCode={gameState.code}
-                  playerId={item.playerId}
-                  currentPlayerId={playerInfo?.id}
-                />
-              ))
-            ) : (
-              <div className="waiting-message">
-                <p>Loading answers...</p>
-              </div>
-            )}
-          </div>
+        <h3>Vote for the Best Answer:</h3>
+        
+        <div className="answers-list">
+          {votingAnswers.length > 0 ? (
+            votingAnswers.map((item, index) => (
+              <AnswerItem 
+                key={index}
+                answer={item.answer}
+                index={index}
+                gameCode={gameState.code}
+                playerId={item.playerId}
+                currentPlayerId={playerInfo?.id}
+              />
+            ))
+          ) : (
+            <div className="waiting-message">
+              <p>Loading answers...</p>
+            </div>
+          )}
+        </div>
 
-          <div className="action-buttons">
-            <button 
-              className="btn"
-              onClick={() => {
-                socket.disconnect()
-                setCurrentScreen('home')
-              }}
-            >
-              LEAVE GAME
-            </button>
-          </div>
+        {/* Leave game button removed - now in menu */}
 
-          {/* Walkie Talkie - Always visible */}
-          <div className="walkie-talkie-fixed">
-            <WalkieTalkie />
-          </div>
+        {/* Walkie Talkie - Always visible */}
+        <div className="walkie-talkie-fixed">
+          <WalkieTalkie />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="card">
-      <div className="game-container">
-        <div className="question-display">
-          <h3 className="question-text">{gameState?.question}</h3>
-          <p className="round-info">Round {gameState?.round} of {gameState?.totalRounds}</p>
-        </div>
+    <div className="game-container">
+      <div className="question-display">
+        <h3 className="question-text">{gameState?.question}</h3>
+        <p className="round-info">Round {gameState?.round} of {gameState?.totalRounds}</p>
+      </div>
 
-        {!hasSubmitted ? (
-          <div className="answer-input">
-            <textarea
-              placeholder="Type your answer here..."
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              className="answer-textarea"
-              maxLength={500}
-            />
+      {!hasSubmitted ? (
+        <div className="answer-input">
+          <textarea
+            placeholder="Type your answer here..."
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            className="answer-textarea"
+            maxLength={500}
+          />
+          
+          <div className="game-actions">
+            <button 
+              className="btn"
+              onClick={submitAnswer}
+              disabled={!answer.trim()}
+            >
+              SUBMIT ANSWER
+            </button>
             
-            <div className="game-actions">
-              <button 
-                className="btn"
-                onClick={submitAnswer}
-                disabled={!answer.trim()}
-              >
-                SUBMIT ANSWER
-              </button>
-              
-              <button 
-                className="btn skip-btn"
-                onClick={skipQuestion}
-              >
-                SKIP QUESTION ({skipVotes.skipVotes}/{skipVotes.totalPlayers})
-              </button>
-            </div>
+            <button 
+              className="btn skip-btn"
+              onClick={skipQuestion}
+            >
+              SKIP QUESTION ({skipVotes.skipVotes}/{skipVotes.totalPlayers})
+            </button>
           </div>
-        ) : (
-          <div className="waiting-message">
-            <p>Answer submitted! Waiting for other players...</p>
-            <p>{answerCount.submitted} / {answerCount.total} players answered</p>
-            <p>Skip votes: {skipVotes.skipVotes} / {skipVotes.totalPlayers}</p>
-          </div>
-        )}
-
-        <div className="action-buttons">
-          <button 
-            className="btn"
-            onClick={() => {
-              socket.disconnect()
-              setCurrentScreen('home')
-            }}
-          >
-            LEAVE GAME
-          </button>
         </div>
-
-        {/* Walkie Talkie - Always visible */}
-        <div className="walkie-talkie-fixed">
-          <WalkieTalkie />
+      ) : (
+        <div className="waiting-message">
+          <p>Answer submitted! Waiting for other players...</p>
+          <p>{answerCount.submitted} / {answerCount.total} players answered</p>
+          <p>Skip votes: {skipVotes.skipVotes} / {skipVotes.totalPlayers}</p>
         </div>
+      )}
+
+      {/* Leave game button removed - now in menu */}
+
+      {/* Walkie Talkie - Always visible */}
+      <div className="walkie-talkie-fixed">
+        <WalkieTalkie />
       </div>
     </div>
   )

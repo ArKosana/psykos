@@ -386,25 +386,33 @@ io.on('connection', (socket) => {
                     cleanupGameCode(game.code);
                     games.delete(game.code);
                     console.log('Game deleted:', game.code);
-                } else if (game.players.size < 2 && game.state !== 'lobby') {
-                    // Less than 2 players, return to lobby
+                } else if (game.players.size < 3 && game.state !== 'lobby') {
+                    // Less than 3 players, return to lobby
                     game.state = 'lobby';
                     game.currentRound = 0;
                     game.answers.clear();
                     game.votes.clear();
                     game.readyPlayers.clear();
                     game.skipVotes.clear();
+                    game.gameInProgress = false;
                     
                     io.to(game.code).emit('return-to-lobby', {
-                        reason: 'Not enough players to continue'
+                        reason: 'Not enough players to continue (minimum 3 required)'
                     });
                     console.log('Game returned to lobby:', game.code, 'Reason: Not enough players');
                 } else if (game.host === playerId) {
-                    // Transfer host to another player
-                    const newHost = game.players.values().next().value;
-                    game.host = newHost.id;
-                    newHost.isHost = true;
-                    io.to(game.code).emit('host-changed', newHost.id);
+                    // Transfer host to next player in order
+                    const remainingPlayers = Array.from(game.players.values());
+                    if (remainingPlayers.length > 0) {
+                        const newHost = remainingPlayers[0]; // First player in the list becomes host
+                        game.host = newHost.id;
+                        newHost.isHost = true;
+                        
+                        io.to(game.code).emit('host-changed', newHost.id);
+                        io.to(game.code).emit('players-updated', Array.from(game.players.values()));
+                        
+                        console.log('Host transferred to:', newHost.name);
+                    }
                 }
                 
                 // Update players list

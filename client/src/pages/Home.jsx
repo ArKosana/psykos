@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const API_URL = import.meta.env.PROD 
@@ -183,67 +183,44 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
     }
   }
 
+  // Handle direct join from URL
+  const handleDirectJoin = () => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const code = urlParams.get('code')
+    if (code && playerName.trim()) {
+      setGameCode(code)
+      joinGame()
+    }
+  }
+
   // Handle direct lobby access from URL
-  const handleDirectLobbyAccess = () => {
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const code = urlParams.get('code')
     if (code) {
       setGameCode(code)
       setShowJoinGame(true)
     }
-  }
-
-  React.useEffect(() => {
-    handleDirectLobbyAccess()
   }, [])
+
+  // Auto-join when both code and name are available
+  useEffect(() => {
+    if (showJoinGame && gameCode && playerName.trim()) {
+      const timer = setTimeout(() => {
+        joinGame()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [showJoinGame, gameCode, playerName])
 
   return (
     <>
       <div className="background-logo">PSYKOS</div>
       <div className="background-tagline">BY KOSANA</div>
 
-      <header className="header">
-        <button 
-          className="menu-button"
-          onClick={() => setShowMenu(true)}
-        >
-          ☰
-        </button>
-        
-        <div style={{width: '40px'}}></div>
-      </header>
-
-      <div className={`menu-overlay ${showMenu ? 'open' : ''}`} onClick={() => setShowMenu(false)}></div>
-      
-      <div className={`side-menu ${showMenu ? 'open' : ''}`}>
-        <div className="menu-content">
-          <h3>MENU</h3>
-          
-          <div className="menu-item" onClick={() => setSoundMuted(!soundMuted)}>
-            SOUND: {soundMuted ? '🔇 MUTED' : '🔊 ON'}
-          </div>
-          
-          <div className="menu-item" onClick={() => {
-            setShowMenu(false)
-            alert('HOW TO PLAY:\n\n1. CREATE OR JOIN A GAME\n2. CHOOSE A CATEGORY\n3. SUBMIT CREATIVE ANSWERS\n4. VOTE FOR THE BEST ANSWERS\n5. EARN POINTS FOR VOTES AND CORRECT GUESSES!')
-          }}>
-            HOW TO PLAY
-          </div>
-          
-          <div className="menu-item" onClick={() => {
-            setShowMenu(false)
-            alert('NOTIFICATIONS SETTINGS WOULD GO HERE')
-          }}>
-            NOTIFICATIONS
-          </div>
-          
-          <div className="menu-item" onClick={() => {
-            setShowMenu(false)
-            alert('GAME CREATED BY KOSANA\nVERSION 1.0')
-          }}>
-            ABOUT
-          </div>
-        </div>
+      {/* Bottom Branding */}
+      <div className="bottom-branding">
+        <div className="bottom-tagline">BY KOSANA</div>
       </div>
 
       <div className="card">
@@ -306,30 +283,27 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
 
         {showCreateGame && (
           <>
-            <div className="text-center">
+            <div className="screen-heading">
               <h2>CHOOSE CATEGORY</h2>
               <p>SELECT A GAME CATEGORY</p>
             </div>
 
-            <div className="category-list">
-              {categories.map(category => (
-                <div 
-                  key={category.id}
-                  className="category-item"
-                  onClick={() => createGame(category)}
-                >
-                  <h3>{category.name}</h3>
-                  <p>{category.description}</p>
-                </div>
-              ))}
+            <div className="category-list-container">
+              <div className="category-list">
+                {categories.map(category => (
+                  <div 
+                    key={category.id}
+                    className="category-item"
+                    onClick={() => createGame(category)}
+                  >
+                    <h3>{category.name}</h3>
+                    <p>{category.description}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <button 
-              className="btn"
-              onClick={() => setShowCreateGame(false)}
-            >
-              BACK
-            </button>
+            {/* No back button - use browser back button */}
           </>
         )}
 
