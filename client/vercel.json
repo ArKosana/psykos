@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    }
+  ],
+  "rewrites": [
+    { "source": "/home", "destination": "/index.html" },
+    { "source": "/lobby/:code", "destination": "/index.html" },
+    { "source": "/game/:code", "destination": "/index.html" },
+    { "source": "/results/:code", "destination": "/index.html" },
+    { "source": "/over/:code", "destination": "/index.html" }
+  ]
+}

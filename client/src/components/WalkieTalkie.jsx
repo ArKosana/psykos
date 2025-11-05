@@ -1,182 +1,182 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import socket from '../socket'
 
-function WalkieTalkie() {
-  const [isTalking, setIsTalking] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
-  const mediaRecorderRef = useRef(null)
-  const audioChunksRef = useRef([])
-  const audioContextRef = useRef(null)
-  const touchTimerRef = useRef(null)
+/**
+ * WalkieTalkie
+ * - Press & hold to talk (touch or mouse)
+ * - Toggle "Lock" to latch talking on/off
+ * - Shows connection & mic states
+ * NOTE: Server simply relays voice events. We send small PCM chunks.
+ */
+export default function WalkieTalkie() {
+  const [ready, setReady] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [locked, setLocked] = useState(false)
+  const mediaStreamRef = useRef(null)
+  const audioCtxRef = useRef(null)
+  const processorRef = useRef(null)
 
   useEffect(() => {
-    // Initialize media recorder
-    const initMediaRecorder = async () => {
+    // Pre-warm permission on first user gesture only
+    const enable = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        })
-        
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType: 'audio/webm;codecs=opus'
-        })
-        
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data)
-          }
-        }
-        
-        mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' })
-          sendAudioData(audioBlob)
-          audioChunksRef.current = []
-        }
-        
-        mediaRecorderRef.current = mediaRecorder
-        
-        // Initialize audio context for playback
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)()
-        
-      } catch (error) {
-        console.error('Error accessing microphone:', error)
-        alert('Microphone access is required for voice chat. Please allow microphone permissions.')
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+        mediaStreamRef.current = stream
+        setReady(true)
+      } catch (e) {
+        console.warn('Mic permission denied:', e)
+        setReady(false)
       }
     }
 
-    initMediaRecorder()
-
-    // Set up audio playback
-    const handleVoiceData = (data) => {
-      playAudioData(data.data)
+    const onFirstTap = () => {
+      window.removeEventListener('touchstart', onFirstTap)
+      window.removeEventListener('mousedown', onFirstTap)
+      enable()
     }
+    window.addEventListener('touchstart', onFirstTap, { passive: true })
+    window.addEventListener('mousedown', onFirstTap)
 
-    socket.on('voice-data', handleVoiceData)
-
-    // Cleanup
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop()
+      window.removeEventListener('touchstart', onFirstTap)
+      window.removeEventListener('mousedown', onFirstTap)
+      stopCapture()
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop())
+        mediaStreamRef.current = null
       }
-      if (touchTimerRef.current) {
-        clearTimeout(touchTimerRef.current)
-      }
-      socket.off('voice-data', handleVoiceData)
     }
   }, [])
 
-  const playAudioData = async (arrayBuffer) => {
-    try {
-      if (audioContextRef.current && arrayBuffer) {
-        const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer)
-        const source = audioContextRef.current.createBufferSource()
-        source.buffer = audioBuffer
-        source.connect(audioContextRef.current.destination)
-        source.start()
+  const startCapture = async () => {
+    if (!mediaStreamRef.current) {
+      try {
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      } catch (e) {
+        alert('Microphone permission is required.')
+        return
       }
-    } catch (error) {
-      console.error('Error playing audio:', error)
     }
+    if (recording) return
+
+    // AudioContext + ScriptProcessor (works on mobile Safari/Chrome)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' })
+    const source = audioCtx.createMediaStreamSource(mediaStreamRef.current)
+    const processor = audioCtx.createScriptProcessor(2048, 1, 1)
+
+    processor.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0)
+      // Convert Float32 [-1,1] -> Int16
+      const buffer = new ArrayBuffer(input.length * 2)
+      const view = new DataView(buffer)
+      for (let i = 0; i < input.length; i++) {
+        let s = Math.max(-1, Math.min(1, input[i]))
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+      }
+      socket.emit('voice-data', buffer)
+    }
+
+    source.connect(processor)
+    processor.connect(audioCtx.destination)
+
+    audioCtxRef.current = audioCtx
+    processorRef.current = processor
+    setRecording(true)
+    socket.emit('voice-start')
   }
 
-  const sendAudioData = (audioBlob) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const arrayBuffer = reader.result
-      socket.emit('voice-data', arrayBuffer)
+  const stopCapture = () => {
+    if (processorRef.current) {
+      try {
+        processorRef.current.disconnect()
+      } catch {}
+      processorRef.current = null
     }
-    reader.readAsArrayBuffer(audioBlob)
-  }
-
-  const startTalking = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
-      setIsTalking(true)
-      setIsRecording(true)
-      audioChunksRef.current = []
-      
-      socket.emit('voice-start')
-      mediaRecorderRef.current.start(100) // Collect data every 100ms
+    if (audioCtxRef.current) {
+      try {
+        audioCtxRef.current.close()
+      } catch {}
+      audioCtxRef.current = null
     }
-  }
-
-  const stopTalking = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      setIsTalking(false)
-      mediaRecorderRef.current.stop()
+    if (recording) {
       socket.emit('voice-end')
-      
-      // Small delay to ensure recording stops completely
-      setTimeout(() => {
-        setIsRecording(false)
-      }, 100)
+      setRecording(false)
     }
   }
 
-  const handleTouchStart = (e) => {
-    e.preventDefault()
-    startTalking()
-    
-    // Prevent long press context menu on mobile
-    touchTimerRef.current = setTimeout(() => {
-      // Visual feedback for long press
-    }, 100)
+  // Press & Hold handlers
+  const onPressStart = () => {
+    if (!locked) startCapture()
+  }
+  const onPressEnd = () => {
+    if (!locked) stopCapture()
+  }
+  const toggleLock = () => {
+    const next = !locked
+    setLocked(next)
+    if (next && !recording) startCapture()
+    if (!next && recording) stopCapture()
   }
 
-  const handleTouchEnd = (e) => {
-    e.preventDefault()
-    if (touchTimerRef.current) {
-      clearTimeout(touchTimerRef.current)
+  // Basic incoming audio (optional — simple preview so people hear others)
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    let sourceNode = null
+    let playing = false
+    const pcmQueue = []
+    let scriptNode = null
+
+    const play = () => {
+      if (playing) return
+      playing = true
+      scriptNode = audioCtx.createScriptProcessor(2048, 1, 1)
+      scriptNode.onaudioprocess = (e) => {
+        const out = e.outputBuffer.getChannelData(0)
+        if (pcmQueue.length) {
+          const data = new Int16Array(pcmQueue.shift())
+          for (let i = 0; i < out.length; i++) {
+            out[i] = (i < data.length ? data[i] / 0x7fff : 0)
+          }
+        } else {
+          out.fill(0)
+        }
+      }
+      scriptNode.connect(audioCtx.destination)
     }
-    stopTalking()
-  }
 
-  const handleMouseDown = (e) => {
-    e.preventDefault()
-    startTalking()
-  }
+    const onStart = () => { play() }
+    const onData = ({ data }) => { pcmQueue.push(data) }
+    const onEnd = () => { /* keep alive */ }
 
-  const handleMouseUp = (e) => {
-    e.preventDefault()
-    stopTalking()
-  }
+    socket.on('voice-start', onStart)
+    socket.on('voice-data', onData)
+    socket.on('voice-end', onEnd)
 
-  const handleMouseLeave = (e) => {
-    if (isTalking) {
-      stopTalking()
+    return () => {
+      socket.off('voice-start', onStart)
+      socket.off('voice-data', onData)
+      socket.off('voice-end', onEnd)
+      if (scriptNode) try { scriptNode.disconnect() } catch {}
+      try { audioCtx.close() } catch {}
     }
-  }
-
-  const handleContextMenu = (e) => {
-    e.preventDefault()
-    return false
-  }
+  }, [])
 
   return (
-    <div className="walkie-talkie-container">
-      <button
-        className={`walkie-talkie-btn ${isTalking ? 'talking' : ''}`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-        onContextMenu={handleContextMenu}
-        title="Hold to talk"
-      >
-        🎤
+    <div 
+      className="ptt"
+      onMouseDown={onPressStart}
+      onMouseUp={onPressEnd}
+      onMouseLeave={onPressEnd}
+      onTouchStart={onPressStart}
+      onTouchEnd={onPressEnd}
+    >
+      <div className={`ptt-indicator ${recording ? 'on' : ''}`}/>
+      <button className={`ptt-btn ${recording ? 'speaking' : ''}`} disabled={!ready}>
+        {recording ? 'TALKING…' : 'HOLD TO TALK'}
       </button>
-      
-      {isTalking && (
-        <div className="talking-indicator">
-          🎙️ Talking...
-        </div>
-      )}
+      <button className={`ptt-lock ${locked ? 'active' : ''}`} onClick={toggleLock} disabled={!ready}>
+        {locked ? 'UNLOCK' : 'LOCK'}
+      </button>
     </div>
   )
 }
-
-export default WalkieTalkie

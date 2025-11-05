@@ -1,168 +1,182 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useRef, useState } from 'react'
 import socket from '../socket'
-import WalkieTalkie from '../components/WalkieTalkie'
 
-const GameScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
-  const [answer, setAnswer] = useState('')
-  const [hasSubmitted, setHasSubmitted] = useState(false)
-  const [answerCount, setAnswerCount] = useState({ submitted: 0, total: 0 })
-  const [skipVotes, setSkipVotes] = useState({ skipVotes: 0, totalPlayers: 0 })
-  const navigate = useNavigate()
+/**
+ * WalkieTalkie
+ * - Press & hold to talk (touch or mouse)
+ * - Toggle "Lock" to latch talking on/off
+ * - Shows connection & mic states
+ * NOTE: Server simply relays voice events. We send small PCM chunks.
+ */
+export default function WalkieTalkie() {
+  const [ready, setReady] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [locked, setLocked] = useState(false)
+  const mediaStreamRef = useRef(null)
+  const audioCtxRef = useRef(null)
+  const processorRef = useRef(null)
 
   useEffect(() => {
-    // Set initial answer count
-    if (gameState?.players) {
-      setAnswerCount({
-        submitted: 0,
-        total: gameState.players.length
-      })
+    // Pre-warm permission on first user gesture only
+    const enable = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+        mediaStreamRef.current = stream
+        setReady(true)
+      } catch (e) {
+        console.warn('Mic permission denied:', e)
+        setReady(false)
+      }
     }
 
-    const handleAnswerCountUpdate = (data) => {
-      setAnswerCount(data)
+    const onFirstTap = () => {
+      window.removeEventListener('touchstart', onFirstTap)
+      window.removeEventListener('mousedown', onFirstTap)
+      enable()
     }
-
-    const handleSkipVotesUpdate = (data) => {
-      setSkipVotes(data)
-    }
-
-    socket.on('answer-count-update', handleAnswerCountUpdate)
-    socket.on('skip-votes-update', handleSkipVotesUpdate)
+    window.addEventListener('touchstart', onFirstTap, { passive: true })
+    window.addEventListener('mousedown', onFirstTap)
 
     return () => {
-      socket.off('answer-count-update', handleAnswerCountUpdate)
-      socket.off('skip-votes-update', handleSkipVotesUpdate)
+      window.removeEventListener('touchstart', onFirstTap)
+      window.removeEventListener('mousedown', onFirstTap)
+      stopCapture()
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop())
+        mediaStreamRef.current = null
+      }
     }
-  }, [gameState])
+  }, [])
 
-  const submitAnswer = () => {
-    if (answer.trim()) {
-      socket.emit('submit-answer', gameState.code, answer.trim())
-      setHasSubmitted(true)
+  const startCapture = async () => {
+    if (!mediaStreamRef.current) {
+      try {
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      } catch (e) {
+        alert('Microphone permission is required.')
+        return
+      }
     }
+    if (recording) return
+
+    // AudioContext + ScriptProcessor (works on mobile Safari/Chrome)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' })
+    const source = audioCtx.createMediaStreamSource(mediaStreamRef.current)
+    const processor = audioCtx.createScriptProcessor(2048, 1, 1)
+
+    processor.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0)
+      // Convert Float32 [-1,1] -> Int16
+      const buffer = new ArrayBuffer(input.length * 2)
+      const view = new DataView(buffer)
+      for (let i = 0; i < input.length; i++) {
+        let s = Math.max(-1, Math.min(1, input[i]))
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+      }
+      socket.emit('voice-data', buffer)
+    }
+
+    source.connect(processor)
+    processor.connect(audioCtx.destination)
+
+    audioCtxRef.current = audioCtx
+    processorRef.current = processor
+    setRecording(true)
+    socket.emit('voice-start')
   }
 
-  const skipQuestion = () => {
-    socket.emit('skip-question', gameState.code)
-  }
-
-  // Handle voting state
-  if (gameState?.state === 'voting') {
-    const votingAnswers = Array.isArray(gameState.votingAnswers) 
-      ? gameState.votingAnswers 
-      : (gameState.votingAnswers?.answers || [])
-
-    return (
-      <div className="voting-container">
-        <div className="question-display">
-          <h3 className="question-text">{gameState.question || gameState.votingAnswers?.question}</h3>
-          <p className="round-info">Round {gameState.round} of {gameState.totalRounds}</p>
-        </div>
-
-        <h3>Vote for the Best Answer:</h3>
-        
-        <div className="answers-list">
-          {votingAnswers.length > 0 ? (
-            votingAnswers.map((item, index) => (
-              <AnswerItem 
-                key={index}
-                answer={item.answer}
-                index={index}
-                gameCode={gameState.code}
-                playerId={item.playerId}
-                currentPlayerId={playerInfo?.id}
-              />
-            ))
-          ) : (
-            <div className="waiting-message">
-              <p>Loading answers...</p>
-            </div>
-          )}
-        </div>
-
-        {/* Leave game button removed - now in menu */}
-
-        {/* Walkie Talkie - Always visible */}
-        <div className="walkie-talkie-fixed">
-          <WalkieTalkie />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="game-container">
-      <div className="question-display">
-        <h3 className="question-text">{gameState?.question}</h3>
-        <p className="round-info">Round {gameState?.round} of {gameState?.totalRounds}</p>
-      </div>
-
-      {!hasSubmitted ? (
-        <div className="answer-input">
-          <textarea
-            placeholder="Type your answer here..."
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            className="answer-textarea"
-            maxLength={500}
-          />
-          
-          <div className="game-actions">
-            <button 
-              className="btn"
-              onClick={submitAnswer}
-              disabled={!answer.trim()}
-            >
-              SUBMIT ANSWER
-            </button>
-            
-            <button 
-              className="btn skip-btn"
-              onClick={skipQuestion}
-            >
-              SKIP QUESTION ({skipVotes.skipVotes}/{skipVotes.totalPlayers})
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="waiting-message">
-          <p>Answer submitted! Waiting for other players...</p>
-          <p>{answerCount.submitted} / {answerCount.total} players answered</p>
-          <p>Skip votes: {skipVotes.skipVotes} / {skipVotes.totalPlayers}</p>
-        </div>
-      )}
-
-      {/* Leave game button removed - now in menu */}
-
-      {/* Walkie Talkie - Always visible */}
-      <div className="walkie-talkie-fixed">
-        <WalkieTalkie />
-      </div>
-    </div>
-  )
-}
-
-const AnswerItem = ({ answer, index, gameCode, playerId, currentPlayerId }) => {
-  const [selected, setSelected] = useState(false)
-
-  const handleVote = () => {
-    if (!selected && playerId !== currentPlayerId) {
-      setSelected(true)
-      socket.emit('submit-vote', gameCode, playerId)
+  const stopCapture = () => {
+    if (processorRef.current) {
+      try {
+        processorRef.current.disconnect()
+      } catch {}
+      processorRef.current = null
+    }
+    if (audioCtxRef.current) {
+      try {
+        audioCtxRef.current.close()
+      } catch {}
+      audioCtxRef.current = null
+    }
+    if (recording) {
+      socket.emit('voice-end')
+      setRecording(false)
     }
   }
+
+  // Press & Hold handlers
+  const onPressStart = () => {
+    if (!locked) startCapture()
+  }
+  const onPressEnd = () => {
+    if (!locked) stopCapture()
+  }
+  const toggleLock = () => {
+    const next = !locked
+    setLocked(next)
+    if (next && !recording) startCapture()
+    if (!next && recording) stopCapture()
+  }
+
+  // Basic incoming audio (optional — simple preview so people hear others)
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    let sourceNode = null
+    let playing = false
+    const pcmQueue = []
+    let scriptNode = null
+
+    const play = () => {
+      if (playing) return
+      playing = true
+      scriptNode = audioCtx.createScriptProcessor(2048, 1, 1)
+      scriptNode.onaudioprocess = (e) => {
+        const out = e.outputBuffer.getChannelData(0)
+        if (pcmQueue.length) {
+          const data = new Int16Array(pcmQueue.shift())
+          for (let i = 0; i < out.length; i++) {
+            out[i] = (i < data.length ? data[i] / 0x7fff : 0)
+          }
+        } else {
+          out.fill(0)
+        }
+      }
+      scriptNode.connect(audioCtx.destination)
+    }
+
+    const onStart = () => { play() }
+    const onData = ({ data }) => { pcmQueue.push(data) }
+    const onEnd = () => { /* keep alive */ }
+
+    socket.on('voice-start', onStart)
+    socket.on('voice-data', onData)
+    socket.on('voice-end', onEnd)
+
+    return () => {
+      socket.off('voice-start', onStart)
+      socket.off('voice-data', onData)
+      socket.off('voice-end', onEnd)
+      if (scriptNode) try { scriptNode.disconnect() } catch {}
+      try { audioCtx.close() } catch {}
+    }
+  }, [])
 
   return (
     <div 
-      className={`answer-item ${selected ? 'selected' : ''} ${playerId === currentPlayerId ? 'own-answer' : ''}`}
-      onClick={handleVote}
+      className="ptt"
+      onMouseDown={onPressStart}
+      onMouseUp={onPressEnd}
+      onMouseLeave={onPressEnd}
+      onTouchStart={onPressStart}
+      onTouchEnd={onPressEnd}
     >
-      <p className="answer-text">{answer}</p>
-      {selected && <p className="vote-status">✓ Voted</p>}
-      {playerId === currentPlayerId && <p className="own-answer-label">Your answer</p>}
+      <div className={`ptt-indicator ${recording ? 'on' : ''}`}/>
+      <button className={`ptt-btn ${recording ? 'speaking' : ''}`} disabled={!ready}>
+        {recording ? 'TALKING…' : 'HOLD TO TALK'}
+      </button>
+      <button className={`ptt-lock ${locked ? 'active' : ''}`} onClick={toggleLock} disabled={!ready}>
+        {locked ? 'UNLOCK' : 'LOCK'}
+      </button>
     </div>
   )
 }
-
-export default GameScreen

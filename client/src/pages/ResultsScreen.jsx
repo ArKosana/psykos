@@ -11,12 +11,10 @@ const ResultsScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
       setReadyPlayers(data.readyPlayers)
       setTotalPlayers(data.totalPlayers)
     }
-
     const handleReturnToLobby = (data) => {
       alert(`Game returned to lobby: ${data.reason}`)
       setCurrentScreen('lobby')
     }
-
     const handlePlayerLeft = (data) => {
       console.log(`${data.playerName} left the game`)
     }
@@ -39,37 +37,25 @@ const ResultsScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
     }
   }
 
-  // Process results data
-  const getPlayerResults = () => {
-    if (!gameState.answers || !gameState.votes || !gameState.players) return []
+  // Prefer server-provided roundResults + roundDeltas
+  const deltasMap = new Map(gameState.roundDeltas || []) // [[playerId, delta]]
+  const results = (gameState.roundResults || []).map(r => ({
+    ...r,
+    isYou: r.playerId === playerInfo.id
+  }))
 
+  // Fallback if server didn't send roundResults
+  if (!results.length && gameState.answers && gameState.votes && gameState.players) {
     const playerMap = new Map(gameState.players.map(p => [p.id, p]))
-    
-    return Array.from(gameState.answers).map(([answerPlayerId, answer]) => {
-      const player = playerMap.get(answerPlayerId)
-      const voters = Array.from(gameState.votes)
-        .filter(([voterId, votedId]) => votedId === answerPlayerId)
-        .map(([voterId]) => playerMap.get(voterId)?.name || 'Unknown')
-      
-      const yourVote = Array.from(gameState.votes).find(([voterId]) => voterId === playerInfo.id)?.[1]
-      const youVotedForThis = yourVote === answerPlayerId
-      const votedForYou = voters.some(voter => voter === playerInfo.name)
-
-      return {
-        playerId: answerPlayerId,
-        playerName: player?.name || 'Unknown',
-        answer: answer,
-        voters: voters,
-        isYou: answerPlayerId === playerInfo.id,
-        youVotedForThis: youVotedForThis,
-        votedForYou: votedForYou,
-        score: gameState.scores?.find(([id]) => id === answerPlayerId)?.[1] || 0
-      }
-    })
+    const temp = Array.from(gameState.answers).map(([pid, ans]) => ({
+      playerId: pid,
+      playerName: playerMap.get(pid)?.name || 'Unknown',
+      delta: deltasMap.get(pid) || 0,
+      detail: 'Votes received',
+      isYou: pid === playerInfo.id
+    }))
+    results.push(...temp)
   }
-
-  const playerResults = getPlayerResults()
-  const yourResult = playerResults.find(r => r.isYou)
 
   return (
     <div className="card">
@@ -80,70 +66,28 @@ const ResultsScreen = ({ setCurrentScreen, gameState, playerInfo }) => {
         </div>
 
         <div className="results-section">
-          {/* Your specific results */}
-          {yourResult && (
-            <div className="player-result you">
+          {results.map((r) => (
+            <div key={r.playerId} className={`player-result ${r.isYou ? 'you' : ''}`}>
               <div className="player-header">
-                <span className="player-name">YOU ({yourResult.playerName})</span>
-                <span className="player-score">+{yourResult.voters.length * 10} pts</span>
+                <span className="player-name">{r.isYou ? `YOU (${r.playerName})` : r.playerName}</span>
+                <span className="player-score">{r.delta >= 0 ? '+' : ''}{r.delta} pts</span>
               </div>
-              <div className="answer-content">
-                <strong>Your answer:</strong> {yourResult.answer}
-              </div>
-              <div className="votes-info">
-                <strong>Who voted for you:</strong> {yourResult.voters.length > 0 ? yourResult.voters.join(', ') : 'No one voted for you'}
-              </div>
-              {yourResult.youVotedForThis && (
+              {r.detail && (
                 <div className="votes-info">
-                  <strong>You voted for:</strong> Yourself ✓
+                  {r.detail}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Other players' answers that you voted for */}
-          {playerResults.filter(r => !r.isYou && r.youVotedForThis).map(result => (
-            <div key={result.playerId} className="player-result">
-              <div className="player-header">
-                <span className="player-name">{result.playerName}</span>
-                <span className="player-score">+{result.voters.length * 10} pts</span>
-              </div>
-              <div className="answer-content">
-                <strong>Their answer:</strong> {result.answer}
-              </div>
-              <div className="votes-info">
-                <strong>You voted for this answer ✓</strong>
-              </div>
-            </div>
-          ))}
-
-          {/* All other answers */}
-          {playerResults.filter(r => !r.isYou && !r.youVotedForThis).map(result => (
-            <div key={result.playerId} className="player-result">
-              <div className="player-header">
-                <span className="player-name">{result.playerName}</span>
-                <span className="player-score">+{result.voters.length * 10} pts</span>
-              </div>
-              <div className="answer-content">
-                <strong>Their answer:</strong> {result.answer}
-              </div>
             </div>
           ))}
         </div>
 
         <div className="action-buttons">
           {!isReady ? (
-            <button 
-              className="btn"
-              onClick={readyForNextRound}
-            >
+            <button className="btn" onClick={readyForNextRound}>
               READY FOR NEXT ROUND
             </button>
           ) : (
-            <button 
-              className="btn ready"
-              disabled
-            >
+            <button className="btn ready" disabled>
               ✓ READY ({readyPlayers.length}/{totalPlayers})
             </button>
           )}

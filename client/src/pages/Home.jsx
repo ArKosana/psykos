@@ -6,132 +6,61 @@ const API_URL = import.meta.env.PROD
   : 'http://localhost:5174';
 
 const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
-  const [showMenu, setShowMenu] = useState(false)
   const [showCreateGame, setShowCreateGame] = useState(false)
   const [showJoinGame, setShowJoinGame] = useState(false)
   const [playerName, setPlayerName] = useState('')
   const [gameCode, setGameCode] = useState('')
   const [playerAvatar, setPlayerAvatar] = useState(null)
-  const [soundMuted, setSoundMuted] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const fileInputRef = useRef(null)
   const navigate = useNavigate()
 
   const categories = [
-    {
-      id: 'caption-this',
-      name: 'CAPTION THIS!',
-      description: 'Create hilarious captions for funny images'
-    },
-    {
-      id: 'acronyms', 
-      name: 'ACRONYMS',
-      description: 'Guess the real meaning of common acronyms'
-    },
-    {
-      id: 'is-that-a-fact',
-      name: 'IS THAT A FACT?',
-      description: 'Separate surprising facts from clever fakes'
-    },
-    {
-      id: 'truth-comes-out',
-      name: 'THE TRUTH COMES OUT',
-      description: 'Personal questions about the players'
-    },
-    {
-      id: 'search-history',
-      name: 'SEARCH HISTORY',
-      description: 'Complete funny search queries'
-    },
-    {
-      id: 'ice-breaker',
-      name: 'ICE BREAKER',
-      description: 'Fun get-to-know-you questions'
-    },
-    {
-      id: 'naked-truth',
-      name: 'THE NAKED TRUTH',
-      description: 'Adult-themed personal questions (18+)'
-    },
-    {
-      id: 'who-among-us',
-      name: 'WHO AMONG US',
-      description: 'Guess who among the players fits the description'
-    }
+    { id: 'caption-this', name: 'CAPTION THIS!', description: 'Create hilarious captions for funny images' },
+    { id: 'acronyms', name: 'ACRONYMS', description: 'Guess the real meaning of common acronyms' },
+    { id: 'is-that-a-fact', name: 'IS THAT A FACT?', description: 'Separate surprising facts from clever fakes' },
+    { id: 'truth-comes-out', name: 'THE TRUTH COMES OUT', description: 'Personal questions about the players' },
+    { id: 'search-history', name: 'SEARCH HISTORY', description: 'Complete funny search queries' },
+    { id: 'ice-breaker', name: 'ICE BREAKER', description: 'Fun get-to-know-you questions' },
+    { id: 'naked-truth', name: 'THE NAKED TRUTH', description: 'Adult-themed personal questions (18+)' },
+    { id: 'who-among-us', name: 'WHO AMONG US', description: 'Guess who among the players fits the description' }
   ]
 
   const handleAvatarUpload = (event) => {
     const file = event.target.files[0]
     if (file) {
-      // Check file size (max 2MB)
-      if (file.size > 2 * 1024 * 1024) {
-        setUploadError('Image must be less than 2MB')
-        return
-      }
-
-      // Check file type
-      if (!file.type.startsWith('image/')) {
-        setUploadError('Please select an image file')
-        return
-      }
-
+      if (file.size > 2 * 1024 * 1024) { setUploadError('Image must be less than 2MB'); return }
+      if (!file.type.startsWith('image/')) { setUploadError('Please select an image file'); return }
       setUploadError('')
       const reader = new FileReader()
-      reader.onload = (e) => {
-        setPlayerAvatar(e.target.result)
-      }
-      reader.onerror = () => {
-        setUploadError('Error reading file. Please try another image.')
-      }
+      reader.onload = (e) => setPlayerAvatar(e.target.result)
+      reader.onerror = () => setUploadError('Error reading file. Please try another image.')
       reader.readAsDataURL(file)
     }
   }
 
-  const triggerAvatarUpload = () => {
-    fileInputRef.current?.click()
-  }
+  const triggerAvatarUpload = () => fileInputRef.current?.click()
 
   const createGame = async (category) => {
-    if (!playerName.trim()) {
-      alert('Please enter your name')
-      return
-    }
+    if (!playerName.trim()) { alert('Please enter your name'); return }
 
     try {
       const response = await fetch(`${API_URL}/create-game`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerName: playerName.trim(),
-          category: category.id,
-          rounds: 10
-        })
+        body: JSON.stringify({ playerName: playerName.trim(), category: category.id, rounds: 10 })
       })
-
       const data = await response.json()
       
-      setPlayerInfo({
-        id: data.playerId,
-        name: playerName.trim(),
-        avatar: playerAvatar,
-        isHost: true
-      })
-      
+      setPlayerInfo({ id: data.playerId, name: playerName.trim(), avatar: playerAvatar, isHost: true })
       setGameState({
         code: data.gameCode,
         category: data.category,
-        players: [{
-          id: data.playerId,
-          name: playerName.trim(),
-          avatar: playerAvatar,
-          isHost: true
-        }],
+        players: [{ id: data.playerId, name: playerName.trim(), avatar: playerAvatar, isHost: true }],
         state: 'lobby',
         gameInProgress: false
       })
-      
-      // Navigate with game code in URL
-      navigate(`/lobby?code=${data.gameCode}`)
+      navigate(`/lobby/${data.gameCode}`)
     } catch (error) {
       console.error('Error creating game:', error)
       alert('Failed to create game. Please try again.')
@@ -139,34 +68,18 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
   }
 
   const joinGame = async () => {
-    if (!playerName.trim() || !gameCode.trim()) {
-      alert('Please enter your name and game code')
-      return
-    }
+    if (!playerName.trim() || !gameCode.trim()) { alert('Please enter your name and game code'); return }
 
     try {
       const response = await fetch(`${API_URL}/join-game`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gameCode: gameCode.trim().toUpperCase(),
-          playerName: playerName.trim()
-        })
+        body: JSON.stringify({ gameCode: gameCode.trim().toUpperCase(), playerName: playerName.trim() })
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to join game')
-      }
+      if (!response.ok) throw new Error('Failed to join game')
 
       const data = await response.json()
-      
-      setPlayerInfo({
-        id: data.playerId,
-        name: playerName.trim(),
-        avatar: playerAvatar,
-        isHost: false
-      })
-      
+      setPlayerInfo({ id: data.playerId, name: playerName.trim(), avatar: playerAvatar, isHost: false })
       setGameState({
         code: gameCode.trim().toUpperCase(),
         category: data.category,
@@ -174,43 +87,29 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
         state: 'lobby',
         gameInProgress: data.gameInProgress || false
       })
-      
-      // Navigate with game code in URL
-      navigate(`/lobby?code=${gameCode.trim().toUpperCase()}`)
+      navigate(`/lobby/${gameCode.trim().toUpperCase()}`)
     } catch (error) {
       console.error('Error joining game:', error)
       alert('Failed to join game. Please check the code and try again.')
     }
   }
 
-  // Handle direct join from URL
-  const handleDirectJoin = () => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const code = urlParams.get('code')
-    if (code && playerName.trim()) {
-      setGameCode(code)
-      joinGame()
-    }
-  }
-
-  // Handle direct lobby access from URL
+  // Pre-fill join if /home?code=ABCD
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const code = urlParams.get('code')
     if (code) {
-      setGameCode(code)
+      setGameCode(code.toUpperCase())
       setShowJoinGame(true)
     }
   }, [])
 
-  // Auto-join when both code and name are available
   useEffect(() => {
     if (showJoinGame && gameCode && playerName.trim()) {
-      const timer = setTimeout(() => {
-        joinGame()
-      }, 500)
-      return () => clearTimeout(timer)
+      const t = setTimeout(() => joinGame(), 400)
+      return () => clearTimeout(t)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showJoinGame, gameCode, playerName])
 
   return (
@@ -218,7 +117,6 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
       <div className="background-logo">PSYKOS</div>
       <div className="background-tagline">BY KOSANA</div>
 
-      {/* Bottom Branding */}
       <div className="bottom-branding">
         <div className="bottom-tagline">BY KOSANA</div>
       </div>
@@ -257,24 +155,14 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
                 accept="image/*"
                 style={{ display: 'none' }}
               />
-              {uploadError && (
-                <p className="error-message">{uploadError}</p>
-              )}
+              {uploadError && <p className="error-message">{uploadError}</p>}
             </div>
 
             <div className="flex flex-column">
-              <button 
-                className="btn"
-                onClick={() => setShowCreateGame(true)}
-                disabled={!playerName.trim()}
-              >
+              <button className="btn" onClick={() => setShowCreateGame(true)} disabled={!playerName.trim()}>
                 CREATE GAME
               </button>
-              <button 
-                className="btn"
-                onClick={() => setShowJoinGame(true)}
-                disabled={!playerName.trim()}
-              >
+              <button className="btn" onClick={() => setShowJoinGame(true)} disabled={!playerName.trim()}>
                 JOIN GAME
               </button>
             </div>
@@ -302,8 +190,6 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
                 ))}
               </div>
             </div>
-
-            {/* No back button - use browser back button */}
           </>
         )}
 
@@ -320,27 +206,12 @@ const Home = ({ setCurrentScreen, setGameState, setPlayerInfo }) => {
               value={gameCode}
               onChange={(e) => setGameCode(e.target.value.toUpperCase())}
               className="player-input"
-              style={{
-                fontSize: '1.3rem',
-                letterSpacing: '0.3rem',
-                textTransform: 'uppercase'
-              }}
+              style={{ fontSize: '1.3rem', letterSpacing: '0.3rem', textTransform: 'uppercase' }}
               maxLength={4}
             />
 
-            <button 
-              className="btn"
-              onClick={joinGame}
-            >
-              JOIN GAME
-            </button>
-
-            <button 
-              className="btn"
-              onClick={() => setShowJoinGame(false)}
-            >
-              BACK
-            </button>
+            <button className="btn" onClick={joinGame}>JOIN GAME</button>
+            <button className="btn" onClick={() => setShowJoinGame(false)}>BACK</button>
           </>
         )}
       </div>
